@@ -147,6 +147,9 @@ Other Changes
 
 ==================  4.10.1 ==================
 
+* SOLR-6359: Allow number of logs and records kept by UpdateLog to be configured
+  (Ramkumar Aiyengar)
+
 Bug Fixes
 ----------------------
 
@@ -280,6 +283,9 @@ New Features
 
 * SOLR-6233: Provide basic command line tools for checking Solr status and health.
   (Timothy Potter)
+
+* SOLR-6650: Add optional slow request logging at WARN level
+  (Jessica Cheng Mallet via Timothy Potter)
 
 Bug Fixes
 ----------------------

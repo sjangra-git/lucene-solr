@@ -47,6 +47,7 @@ public class ShardRequest {
 
   public ModifiableSolrParams params;
 
+  public ResponseBuilder rb;
 
   /** list of responses... filled out by framework */
   public List<ShardResponse> responses = new ArrayList<>();
