@@ -301,6 +301,11 @@ public class LBHttpSolrServer extends SolrServer {
       ex = doRequest(server, req, rsp, isUpdate, false, null);
       if (ex == null) {
         return rsp; // SUCCESS
+      }else{
+        if( !isUpdate){
+          //If this is not an update request, fail fast rather than going in a loop to try all servers.
+          break;
+        }
       }
     }
 
@@ -309,6 +314,11 @@ public class LBHttpSolrServer extends SolrServer {
       ex = doRequest(wrapper.solrServer, req, rsp, isUpdate, true, wrapper.getKey());
       if (ex == null) {
          return rsp; // SUCCESS
+      }else{
+        if( !isUpdate){
+        //If this is not an update request, fail fast rather than going in a loop to try all servers.
+          break;
+        }
       }
     }
 
@@ -316,7 +326,11 @@ public class LBHttpSolrServer extends SolrServer {
     if (ex == null) {
       throw new SolrServerException("No live SolrServers available to handle this request");
     } else {
-      throw new SolrServerException("No live SolrServers available to handle this request:" + zombieServers.keySet(), ex);
+      if( !isUpdate && ex instanceof SocketTimeoutException ){
+        throw new SolrServerException(" Tried one server for read operation and it timed out, so failing fast. " + zombieServers.keySet(), ex);
+      }else{
+        throw new SolrServerException("No live SolrServers available to handle this request:" + zombieServers.keySet(), ex);
+      }
     }
 
   }
@@ -360,11 +374,16 @@ public class LBHttpSolrServer extends SolrServer {
         throw e;
       }
     } catch (SocketTimeoutException e) {
-      if (!isUpdate) {
-        ex = (!isZombie) ? addZombie(server, e) : e;
-      } else {
-        throw e;
-      }
+      /**
+       * 2015-11-02 SocketTimeOutException is considered to be benign. 
+       * There is no need to overreact and put the server in zombie state.
+       */
+//      if (!isUpdate) {
+//        ex = (!isZombie) ? addZombie(server, e) : e;
+//      } else {
+//        throw e;
+//      }
+      throw e;
     } catch (SolrServerException e) {
       Throwable rootCause = e.getRootCause();
       if (!isUpdate && rootCause instanceof IOException) {
@@ -649,7 +668,8 @@ public class LBHttpSolrServer extends SolrServer {
   }
 
   // defaults
-  private static final int CHECK_INTERVAL = 60 * 1000; //1 minute between checks
+  private static final int CHECK_INTERVAL = 15 * 1000; //Changing this to 15 seconds. Ideally this should be a parameter in config. 
+  
   private static final int NONSTANDARD_PING_LIMIT = 5;  // number of times we'll ping dead servers not in the server list
 
 }
