@@ -24,6 +24,8 @@ import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SolrjNamedThreadFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.solr.common.SolrException;
 
 import java.io.IOException;
@@ -77,7 +79,37 @@ import java.util.*;
  */
 public class LBHttpSolrServer extends SolrServer {
   private static Set<Integer> RETRY_CODES = new HashSet<>(4);
+  protected static Logger log = LoggerFactory.getLogger(LBHttpSolrServer.class);
 
+/*  * This detects if a dead server comes alive automatically. The check is done in fixed intervals in a dedicated thread.
+  * This interval can be set using {@link #setAliveCheckInterval} , the default is set to one minute.
+  * <p/>
+  * <b>When to use this?</b><br/> This can be used as a software load balancer when you do not wish to setup an external
+  * load balancer. Alternatives to this code are to use
+  * a dedicated hardware load balancer or using Apache httpd with mod_proxy_balancer as a load balancer. See <a
+  * href="http://en.wikipedia.org/wiki/Load_balancing_(computing)">Load balancing on Wikipedia</a>
+  * This detects if a dead server comes alive automatically. The check is done in fixed intervals in a dedicated thread.
+  * This interval can be set using {@link #setAliveCheckInterval} , the default is set to one minute.
+  * <p/>
+  * <b>When to use this?</b><br/> This can be used as a software load balancer when you do not wish to setup an external
+  * load balancer. Alternatives to this code are to use
+  * a dedicated hardware load balancer or using Apache httpd with mod_proxy_balancer as a load balancer. See <a
+  * href="http://en.wikipedia.org/wiki/Load_balancing_(computing)">Load balancing on Wikipedia</a> * This detects if a dead server comes alive automatically. The check is done in fixed intervals in a dedicated thread.
+  * This interval can be set using {@link #setAliveCheckInterval} , the default is set to one minute.
+  * <p/>
+  * <b>When to use this?</b><br/> This can be used as a software load balancer when you do not wish to setup an external
+  * load balancer. Alternatives to this code are to use
+  * a dedicated hardware load balancer or using Apache httpd with mod_proxy_balancer as a load balancer. See <a
+  * href="http://en.wikipedia.org/wiki/Load_balancing_(computing)">Load balancing on Wikipedia</a> * This detects if a dead server comes alive automatically. The check is done in fixed intervals in a dedicated thread.
+  * This interval can be set using {@link #setAliveCheckInterval} , the default is set to one minute.
+  * <p/>
+  * <b>When to use this?</b><br/> This can be used as a software load balancer when you do not wish to setup an external
+  * load balancer. Alternatives to this code are to use
+  * a dedicated hardware load balancer or using Apache httpd with mod_proxy_balancer as a load balancer. See <a
+  * href="http://en.wikipedia.org/wiki/Load_balancing_(computing)">Load balancing on Wikipedia</a>
+  */
+  
+  
   static {
     RETRY_CODES.add(404);
     RETRY_CODES.add(403);
@@ -280,6 +312,7 @@ public class LBHttpSolrServer extends SolrServer {
    * @throws IOException If there is a low-level I/O error.
    */
   public Rsp request(Req req) throws SolrServerException, IOException {
+    if (log.isDebugEnabled()) log.debug("Patched LBHttpSolrServer being used.");
     Rsp rsp = new Rsp();
     Exception ex = null;
     boolean isUpdate = req.request instanceof IsUpdateRequest;
@@ -303,6 +336,7 @@ public class LBHttpSolrServer extends SolrServer {
         return rsp; // SUCCESS
       }else{
         if( !isUpdate){
+          if (log.isDebugEnabled()) log.debug(" Fail Fast on reads.");
           //If this is not an update request, fail fast rather than going in a loop to try all servers.
           break;
         }
@@ -317,6 +351,7 @@ public class LBHttpSolrServer extends SolrServer {
       }else{
         if( !isUpdate){
         //If this is not an update request, fail fast rather than going in a loop to try all servers.
+          if (log.isDebugEnabled()) log.debug(" Fail Fast on reads from skipped servers");
           break;
         }
       }
@@ -326,10 +361,18 @@ public class LBHttpSolrServer extends SolrServer {
     if (ex == null) {
       throw new SolrServerException("No live SolrServers available to handle this request");
     } else {
-      if( !isUpdate && ex instanceof SocketTimeoutException ){
-        throw new SolrServerException(" Tried one server for read operation and it timed out, so failing fast. " + zombieServers.keySet(), ex);
+      if (log.isDebugEnabled()) log.debug( "Type of exception"+ ex.getClass());
+      if (!isUpdate && ex instanceof SolrServerException) {
+        SolrServerException solrEx = (SolrServerException) ex ;
+        Throwable rootCause = solrEx.getRootCause();
+        if ( rootCause != null && rootCause instanceof SocketTimeoutException) {
+          if (log.isDebugEnabled()) log.debug( "Timeout exception "+ ex.getClass());
+          throw new SolrServerException(" Tried one server for read operation and it timed out, so failing fast ", ex);
+        }else{
+          throw new SolrServerException("No live SolrServers available to handle this request. Zombie server list: " + zombieServers.keySet(), ex);
+        }
       }else{
-        throw new SolrServerException("No live SolrServers available to handle this request:" + zombieServers.keySet(), ex);
+        throw new SolrServerException("No live SolrServers available to handle this request. Zombie server list: " + zombieServers.keySet(), ex);
       }
     }
 
@@ -368,32 +411,37 @@ public class LBHttpSolrServer extends SolrServer {
         throw e;
       }
     } catch (SocketException e) {
+      if (log.isDebugEnabled()) log.debug( "Got SocketException "+ e.getMessage());
       if (!isUpdate || e instanceof ConnectException) {
         ex = (!isZombie) ? addZombie(server, e) : e;
       } else {
         throw e;
       }
     } catch (SocketTimeoutException e) {
-      /**
-       * 2015-11-02 SocketTimeOutException is considered to be benign. 
-       * There is no need to overreact and put the server in zombie state.
-       */
-//      if (!isUpdate) {
-//        ex = (!isZombie) ? addZombie(server, e) : e;
-//      } else {
-//        throw e;
-//      }
-      throw e;
+      if (log.isDebugEnabled()) log.debug( "Got SocketTimeoutException "+ e.getMessage());
+      if (!isUpdate) {
+        /**
+         * 2015-11-02 SocketTimeOutException is considered to be benign. 
+         * There is no need to overreact and put the server in zombie state.
+         */
+        ex = e;
+      } else {
+        throw e;
+      }
     } catch (SolrServerException e) {
+      if (log.isDebugEnabled()) log.debug( "Got SolrServerException "+ e.getMessage());
       Throwable rootCause = e.getRootCause();
-      if (!isUpdate && rootCause instanceof IOException) {
+      if (!isUpdate && rootCause instanceof SocketTimeoutException) {
+        ex = e; //Do not put in zombie. 
+      }else if (!isUpdate && rootCause instanceof IOException) {
         ex = (!isZombie) ? addZombie(server, e) : e;
-      } else if (isUpdate && rootCause instanceof ConnectException) {
+      } else if ( isUpdate && rootCause instanceof ConnectException) {
         ex = (!isZombie) ? addZombie(server, e) : e;
       } else {
         throw e;
       }
     } catch (Exception e) {
+      if (log.isDebugEnabled()) log.debug( "Got Exception "+ e.getMessage());
       throw new SolrServerException(e);
     }
 
