@@ -131,7 +131,7 @@ public class HttpShardHandler extends ShardHandler {
     SolrQueryRequest req = sreq.rb.req;
 
     // determine if we should apply the local preference
-    if (!req.getOriginalParams().getBool(CommonParams.PREFER_LOCAL_SHARDS, false))
+    if (!req.getOriginalParams().getBool(CommonParams.PREFER_LOCAL_SHARDS, true))
       return;
 
     // Get this node's base URL from ZK
