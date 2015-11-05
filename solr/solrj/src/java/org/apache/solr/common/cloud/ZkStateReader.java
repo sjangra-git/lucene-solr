@@ -38,12 +38,14 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.Iterator;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
@@ -560,6 +562,50 @@ public class ZkStateReader implements Closeable {
       if (clusterState != null) {    
         Replica replica = clusterState.getLeader(collection, shard);
         if (replica != null && getClusterState().liveNodesContain(replica.getNodeName())) {
+          return replica;
+        }
+      }
+      Thread.sleep(50);
+    }
+    throw new SolrException(ErrorCode.SERVICE_UNAVAILABLE, "No registered leader was found after waiting for "
+        + timeout + "ms " + ", collection: " + collection + " slice: " + shard);
+  }
+
+  /**
+   * Get shard leader properties, with retry if none exist.
+   */
+  public Replica getReplicaRetry(String collection, String shard, String coreNodeName) throws InterruptedException {
+    return getReplicaRetry(collection, shard, coreNodeName, 4000);
+  }
+
+  /**
+   * Get shard leader properties, with retry if none exist.
+   */
+  public Replica getReplicaRetry(String collection, String shard, String coreNodeName, int timeout) throws InterruptedException {
+    long timeoutAt = System.nanoTime() + TimeUnit.NANOSECONDS.convert(timeout, TimeUnit.MILLISECONDS);
+    Collection<Replica> replicas = (Collection<Replica>) clusterState.getReplicaBySlice(collection, shard);
+    Iterator<Replica> itr = replicas.iterator();
+    Replica leaderReplica = clusterState.getLeader(collection, shard);
+    while (System.nanoTime() < timeoutAt && !closed) {
+      if (clusterState != null) {
+          Replica replica = null;
+          if(itr.hasNext()) {
+            replica = itr.next();
+            // Skip if leader - will consider leader when no other replica is remaining.
+            // TODO: better add equals in the Replica class for comparison here
+            if(replica.getNodeName().equals(leaderReplica.getNodeName())) {
+                log.info("SANDY: Replica: "+ replica.getName() + " is leader, so skipping it for now.");
+                continue;
+            }
+          }
+          else {
+              // If no live replica found then pick the leader
+              replica = leaderReplica;
+              log.info("-------SANDY: Did not find any active replica, so using leader for recovery ------");
+          }
+          //TODO: Remove this startsWith  - find which variable has exact coreName or get NodeName
+          if (replica != null && getClusterState().liveNodesContain(replica.getNodeName()) && !coreNodeName.equals(replica.getName())) {
+              log.info("SANDY: ReplicaNode Name:"+replica.getNodeName() + "---current CoreNodeName" + coreNodeName +"---replica.getName()" + replica.getName());
           return replica;
         }
       }

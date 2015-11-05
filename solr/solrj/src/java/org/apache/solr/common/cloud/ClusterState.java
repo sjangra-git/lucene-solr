@@ -22,6 +22,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -98,6 +100,18 @@ public class ClusterState implements JSONWriter.Writable {
     if (slice == null) return null;
     return slice.getLeader();
   }
+  public Collection<Replica> getReplicaBySlice(String collection, String sliceName) {
+      DocCollection coll = getCollectionOrNull(collection);
+      if (coll == null) return null;
+      Slice slice = coll.getSlice(sliceName);
+      if (slice == null) return null;
+      // Get the first replica from the collection - TODO: Check if this replica could be a leader.
+      List<Replica> replicas = new LinkedList<Replica>(slice.getReplicas());
+      Collections.shuffle(replicas);
+      log.info("SANDY: Shuffled list of replicas - " + replicas);
+      return replicas;
+    }
+
   private Replica getReplica(DocCollection coll, String replicaName) {
     if (coll == null) return null;
     for (Slice slice : coll.getSlices()) {

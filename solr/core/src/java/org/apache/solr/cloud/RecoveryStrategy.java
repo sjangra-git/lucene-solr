@@ -329,13 +329,25 @@ public class RecoveryStrategy extends Thread implements ClosableThread {
       try {
         CloudDescriptor cloudDesc = core.getCoreDescriptor()
             .getCloudDescriptor();
-        ZkNodeProps leaderprops = zkStateReader.getLeaderRetry(
-            cloudDesc.getCollectionName(), cloudDesc.getShardId());
-      
+//        ZkNodeProps leaderprops = zkStateReader.getLeaderRetry(
+//            cloudDesc.getCollectionName(), cloudDesc.getShardId());
+        //TODO: Change tha variable leaderprops to replicaprops
+      ZkNodeProps replicaprops = zkStateReader.getReplicaRetry (
+      cloudDesc.getCollectionName(), cloudDesc.getShardId(), cloudDesc.getCoreNodeName());
+
+      ZkNodeProps leaderprops = zkStateReader.getLeaderRetry(
+      cloudDesc.getCollectionName(), cloudDesc.getShardId());
+
         final String leaderBaseUrl = leaderprops.getStr(ZkStateReader.BASE_URL_PROP);
         final String leaderCoreName = leaderprops.getStr(ZkStateReader.CORE_NAME_PROP);
 
+        final String replicaBaseUrl = replicaprops.getStr(ZkStateReader.BASE_URL_PROP);
+        final String replicaCoreName = replicaprops.getStr(ZkStateReader.CORE_NAME_PROP);
+        log.info("SANDY: Replica Base URL: " + replicaBaseUrl);
+        log.info("SANDY: Replica Core Name: " + replicaCoreName);
+
         String leaderUrl = ZkCoreNodeProps.getCoreUrl(leaderBaseUrl, leaderCoreName);
+        String recoveryReplicaUrl = ZkCoreNodeProps.getCoreUrl(replicaBaseUrl, replicaCoreName);
 
         String ourUrl = ZkCoreNodeProps.getCoreUrl(baseUrl, coreName);
 
@@ -368,7 +380,8 @@ public class RecoveryStrategy extends Thread implements ClosableThread {
           break;
         }
 
-        sendPrepRecoveryCmd(leaderBaseUrl, leaderCoreName, slice);
+        log.info("SANDY: ----------- Send recovery command to "+ replicaBaseUrl + " --- " + replicaCoreName);
+        sendPrepRecoveryCmd(replicaBaseUrl, replicaCoreName, slice);
         
         if (isClosed()) {
           log.info("Recovery was cancelled");
@@ -387,11 +400,11 @@ public class RecoveryStrategy extends Thread implements ClosableThread {
         // first thing we just try to sync
         if (firstTime) {
           firstTime = false; // only try sync the first time through the loop
-          log.info("Attempting to PeerSync from " + leaderUrl + " core=" + coreName + " - recoveringAfterStartup="+recoveringAfterStartup);
+          log.info("Attempting to PeerSync from " + recoveryReplicaUrl + " core=" + coreName + " - recoveringAfterStartup="+recoveringAfterStartup);
           // System.out.println("Attempting to PeerSync from " + leaderUrl
           // + " i am:" + zkController.getNodeName());
           PeerSync peerSync = new PeerSync(core,
-              Collections.singletonList(leaderUrl), ulog.getNumRecordsToKeep(), false, false);
+              Collections.singletonList(recoveryReplicaUrl), ulog.getNumRecordsToKeep(), false, false);
           peerSync.setStartingVersions(recentVersions);
           boolean syncSuccess = peerSync.sync();
           if (syncSuccess) {
@@ -444,7 +457,7 @@ public class RecoveryStrategy extends Thread implements ClosableThread {
         
         try {
 
-          replicate(zkController.getNodeName(), core, leaderprops);
+          replicate(zkController.getNodeName(), core, replicaprops);
 
           if (isClosed()) {
             log.info("Recovery was cancelled");
@@ -596,6 +609,7 @@ public class RecoveryStrategy extends Thread implements ClosableThread {
       throws SolrServerException, IOException, InterruptedException, ExecutionException {
     HttpSolrServer server = new HttpSolrServer(leaderBaseUrl);
     try {
+        log.info("SANDY: Recovery from ---"+ leaderBaseUrl);
       server.setConnectionTimeout(30000);
       WaitForState prepCmd = new WaitForState();
       prepCmd.setCoreName(leaderCoreName);
@@ -603,7 +617,7 @@ public class RecoveryStrategy extends Thread implements ClosableThread {
       prepCmd.setCoreNodeName(coreZkNodeName);
       prepCmd.setState(ZkStateReader.RECOVERING);
       prepCmd.setCheckLive(true);
-      prepCmd.setOnlyIfLeader(true);
+//      prepCmd.setOnlyIfLeader(true);
       if (!Slice.CONSTRUCTION.equals(slice.getState()) && !Slice.RECOVERY.equals(slice.getState())) {
         prepCmd.setOnlyIfLeaderActive(true);
       }
