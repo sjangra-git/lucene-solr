@@ -579,33 +579,16 @@ public class ZkStateReader implements Closeable {
   }
 
   /**
-   * Get shard leader properties, with retry if none exist.
+   * Get replica properties, with retry if none exist.
    */
   public Replica getReplicaRetry(String collection, String shard, String coreNodeName, int timeout) throws InterruptedException {
     long timeoutAt = System.nanoTime() + TimeUnit.NANOSECONDS.convert(timeout, TimeUnit.MILLISECONDS);
-    Collection<Replica> replicas = (Collection<Replica>) clusterState.getReplicaBySlice(collection, shard);
-    Iterator<Replica> itr = replicas.iterator();
-    Replica leaderReplica = clusterState.getLeader(collection, shard);
     while (System.nanoTime() < timeoutAt && !closed) {
       if (clusterState != null) {
-          Replica replica = null;
-          if(itr.hasNext()) {
-            replica = itr.next();
-            // Skip if leader - will consider leader when no other replica is remaining.
-            // TODO: better add equals in the Replica class for comparison here
-            if(replica.getNodeName().equals(leaderReplica.getNodeName())) {
-                log.info("SANDY: Replica: "+ replica.getName() + " is leader, so skipping it for now.");
-                continue;
-            }
-          }
-          else {
-              // If no live replica found then pick the leader
-              replica = leaderReplica;
-              log.info("-------SANDY: Did not find any active replica, so using leader for recovery ------");
-          }
-          //TODO: Remove this startsWith  - find which variable has exact coreName or get NodeName
+          Replica replica = clusterState.getReplicaBySlice(collection, shard);
+          
           if (replica != null && getClusterState().liveNodesContain(replica.getNodeName()) && !coreNodeName.equals(replica.getName())) {
-              log.info("SANDY: ReplicaNode Name:"+replica.getNodeName() + "---current CoreNodeName" + coreNodeName +"---replica.getName()" + replica.getName());
+              log.info("ReplicaNode Name:"+replica.getNodeName() + "---current CoreNodeName" + coreNodeName +"---replica.getName()" + replica.getName());
           return replica;
         }
       }

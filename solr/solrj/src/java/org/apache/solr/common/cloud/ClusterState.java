@@ -100,7 +100,7 @@ public class ClusterState implements JSONWriter.Writable {
     if (slice == null) return null;
     return slice.getLeader();
   }
-  public Collection<Replica> getReplicaBySlice(String collection, String sliceName) {
+  public Replica getReplicaBySlice(String collection, String sliceName) {
       DocCollection coll = getCollectionOrNull(collection);
       if (coll == null) return null;
       Slice slice = coll.getSlice(sliceName);
@@ -108,8 +108,8 @@ public class ClusterState implements JSONWriter.Writable {
       // Get the first replica from the collection - TODO: Check if this replica could be a leader.
       List<Replica> replicas = new LinkedList<Replica>(slice.getReplicas());
       Collections.shuffle(replicas);
-      log.info("SANDY: Shuffled list of replicas - " + replicas);
-      return replicas;
+      log.debug("Shuffled list of replicas - " + replicas);
+      return replicas.get(0);
     }
 
   private Replica getReplica(DocCollection coll, String replicaName) {
