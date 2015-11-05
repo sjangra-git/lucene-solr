@@ -240,6 +240,8 @@ public class SolrConfig extends Config {
     hashSetInverseLoadFactor = 1.0f / getFloat("//HashDocSet/@loadFactor",0.75f);
     hashDocSetMaxSize= getInt("//HashDocSet/@maxSize",3000);
 
+    recoverFromActiveReplica = getBool("recoverFromActiveReplica", false);
+    
     httpCachingConfig = new HttpCachingConfig(this);
 
     Node jmx = getNode("jmx", false);
@@ -390,6 +392,7 @@ public class SolrConfig extends Config {
   public final SolrIndexConfig indexConfig;
 
   protected UpdateHandlerInfo updateHandlerInfo ;
+  public final boolean recoverFromActiveReplica;
 
   private Map<String, List<PluginInfo>> pluginStore = new LinkedHashMap<>();
 

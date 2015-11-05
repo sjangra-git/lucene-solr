@@ -327,20 +327,26 @@ public class RecoveryStrategy extends Thread implements ClosableThread {
 
     while (!successfulRecovery && !isInterrupted() && !isClosed()) { // don't use interruption or it will close channels though
       try {
-        CloudDescriptor cloudDesc = core.getCoreDescriptor()
-            .getCloudDescriptor();
-        //TODO: Change tha variable leaderprops to replicaprops
-      ZkNodeProps replicaprops = zkStateReader.getReplicaRetry (
-      cloudDesc.getCollectionName(), cloudDesc.getShardId(), cloudDesc.getCoreNodeName());
+        CloudDescriptor cloudDesc = core.getCoreDescriptor().getCloudDescriptor();
+            
+        ZkNodeProps recoverySourceReplicaProps;
+        ZkNodeProps leaderprops = zkStateReader.getLeaderRetry(
+                cloudDesc.getCollectionName(), cloudDesc.getShardId());
 
-      ZkNodeProps leaderprops = zkStateReader.getLeaderRetry(
-      cloudDesc.getCollectionName(), cloudDesc.getShardId());
+        if(core.getSolrConfig().recoverFromActiveReplica) {
+           log.info("Recovering from active replica");
+            recoverySourceReplicaProps = zkStateReader.getReplicaRetry (
+                    cloudDesc.getCollectionName(), cloudDesc.getShardId(), cloudDesc.getCoreNodeName());
+        } else {
+            log.info("Recovering from leader only");
+            recoverySourceReplicaProps = leaderprops;
+        }
 
         final String leaderBaseUrl = leaderprops.getStr(ZkStateReader.BASE_URL_PROP);
         final String leaderCoreName = leaderprops.getStr(ZkStateReader.CORE_NAME_PROP);
 
-        final String replicaBaseUrl = replicaprops.getStr(ZkStateReader.BASE_URL_PROP);
-        final String replicaCoreName = replicaprops.getStr(ZkStateReader.CORE_NAME_PROP);
+        final String replicaBaseUrl = recoverySourceReplicaProps.getStr(ZkStateReader.BASE_URL_PROP);
+        final String replicaCoreName = recoverySourceReplicaProps.getStr(ZkStateReader.CORE_NAME_PROP);
         log.debug("Replica Base URL: " + replicaBaseUrl);
         log.debug("Replica Core Name: " + replicaCoreName);
 
@@ -455,7 +461,7 @@ public class RecoveryStrategy extends Thread implements ClosableThread {
         
         try {
 
-          replicate(zkController.getNodeName(), core, replicaprops);
+          replicate(zkController.getNodeName(), core, recoverySourceReplicaProps);
 
           if (isClosed()) {
             log.info("Recovery was cancelled");
